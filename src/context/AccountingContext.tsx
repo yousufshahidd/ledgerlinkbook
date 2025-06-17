@@ -1,8 +1,9 @@
+
 "use client";
 
 import type React from 'react';
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import type { Account, Transaction, AppData } from '@/lib/types';
+import type { Account, Transaction, AppData, LedgerEntry } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 
 const LOCAL_STORAGE_KEY = 'ledgerLocalData';
@@ -11,6 +12,8 @@ interface AccountingContextType {
   accounts: Account[];
   transactions: Transaction[];
   addAccount: (name: string) => Promise<Account | null>;
+  updateAccount: (accountId: string, newName: string) => Promise<Account | null>;
+  deleteAccount: (accountId: string) => Promise<void>;
   getAccountById: (id: string) => Account | undefined;
   getAccountByName: (name: string) => Account | undefined;
   addTransaction: (tx: Omit<Transaction, 'id' | 'createdAt'>) => Promise<Transaction | null>;
@@ -19,6 +22,7 @@ interface AccountingContextType {
   getTransactionById: (id: string) => Transaction | undefined;
   getTransactionsForAccount: (accountId: string) => Transaction[];
   isSlipNoUnique: (slipNo: string, currentTransactionId?: string) => boolean;
+  calculateAccountBalance: (accountId: string) => { balance: number; type: 'Dr' | 'Cr' | 'Zero' };
   backupData: () => void;
   restoreData: (jsonData: string) => Promise<boolean>;
   isLoading: boolean;
@@ -41,7 +45,6 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         setAccounts(parsedData.accounts || []);
         setTransactions(parsedData.transactions || []);
       } else {
-        // Initialize with empty arrays if no data
         setAccounts([]);
         setTransactions([]);
       }
@@ -70,7 +73,7 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: saveData should run when accounts or transactions change
   useEffect(() => {
-    if (!isLoading) { // Avoid saving initial empty state before loading
+    if (!isLoading) {
       saveData();
     }
   }, [accounts, transactions, saveData, isLoading]);
@@ -85,18 +88,52 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       return null;
     }
     const newAccount: Account = { id: crypto.randomUUID(), name, createdAt: new Date().toISOString() };
-    setAccounts(prev => [...prev, newAccount]);
+    setAccounts(prev => [...prev, newAccount].sort((a,b) => a.name.localeCompare(b.name)));
     toast({ title: "Success", description: `Account "${name}" created.` });
     return newAccount;
   };
 
+  const updateAccount = async (accountId: string, newName: string): Promise<Account | null> => {
+    const existingAccountWithName = getAccountByName(newName);
+    if (existingAccountWithName && existingAccountWithName.id !== accountId) {
+      toast({ title: "Error", description: `Account with name "${newName}" already exists.`, variant: "destructive" });
+      return null;
+    }
+    let updatedAccount: Account | null = null;
+    setAccounts(prev =>
+      prev.map(acc => {
+        if (acc.id === accountId) {
+          updatedAccount = { ...acc, name: newName };
+          return updatedAccount;
+        }
+        return acc;
+      }).sort((a,b) => a.name.localeCompare(b.name))
+    );
+    if (updatedAccount) {
+      toast({ title: "Success", description: `Account "${updatedAccount.name}" updated.` });
+    }
+    return updatedAccount;
+  };
+
+  const deleteAccount = async (accountId: string): Promise<void> => {
+    const accountToDelete = getAccountById(accountId);
+    if (!accountToDelete) {
+        toast({ title: "Error", description: "Account not found for deletion.", variant: "destructive" });
+        return;
+    }
+    setTransactions(prev => prev.filter(tx => tx.accountId !== accountId && tx.codeAccountId !== accountId));
+    setAccounts(prev => prev.filter(acc => acc.id !== accountId));
+    toast({ title: "Success", description: `Account "${accountToDelete.name}" and its transactions deleted.` });
+  };
+
   const isSlipNoUnique = useCallback((slipNo: string, currentTransactionId?: string) => {
-    return !transactions.some(tx => tx.slipNo === slipNo && tx.id !== currentTransactionId);
+    if (!slipNo || slipNo.trim() === '') return true; // Allow empty or whitespace slip numbers if desired, or enforce here
+    return !transactions.some(tx => tx.slipNo.trim().toLowerCase() === slipNo.trim().toLowerCase() && tx.id !== currentTransactionId);
   }, [transactions]);
 
   const addTransaction = async (txData: Omit<Transaction, 'id' | 'createdAt'>): Promise<Transaction | null> => {
-    if (!isSlipNoUnique(txData.slipNo)) {
-      const existingTx = transactions.find(t => t.slipNo === txData.slipNo);
+    if (txData.slipNo.trim() && !isSlipNoUnique(txData.slipNo)) {
+      const existingTx = transactions.find(t => t.slipNo.trim().toLowerCase() === txData.slipNo.trim().toLowerCase());
       const existingAcc = existingTx ? getAccountById(existingTx.accountId) : null;
       const errorMessage = existingAcc
         ? `Slip No. "${txData.slipNo}" already used in account "${existingAcc.name}".`
@@ -116,8 +153,8 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   const updateTransaction = async (updatedTx: Transaction): Promise<Transaction | null> => {
-    if (!isSlipNoUnique(updatedTx.slipNo, updatedTx.id)) {
-      const existingTx = transactions.find(t => t.slipNo === updatedTx.slipNo && t.id !== updatedTx.id);
+     if (updatedTx.slipNo.trim() && !isSlipNoUnique(updatedTx.slipNo, updatedTx.id)) {
+      const existingTx = transactions.find(t => t.slipNo.trim().toLowerCase() === updatedTx.slipNo.trim().toLowerCase() && t.id !== updatedTx.id);
       const existingAcc = existingTx ? getAccountById(existingTx.accountId) : null;
       const errorMessage = existingAcc
         ? `Slip No. "${updatedTx.slipNo}" already used in account "${existingAcc.name}".`
@@ -146,6 +183,28 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime() || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [transactions]);
 
+  const calculateAccountBalance = useCallback((accountId: string): { balance: number; type: 'Dr' | 'Cr' | 'Zero' } => {
+    const accountTransactions = transactions.reduce((acc, tx) => {
+      if (tx.accountId === accountId) {
+        acc.push(tx);
+      } else if (tx.codeAccountId === accountId) {
+        // Mirrored transaction: swap debit/credit
+        acc.push({
+          ...tx,
+          debit: tx.credit,
+          credit: tx.debit,
+        });
+      }
+      return acc;
+    }, [] as Transaction[]);
+
+    const balance = accountTransactions.reduce((sum, tx) => sum + tx.debit - tx.credit, 0);
+
+    if (balance > 0) return { balance, type: 'Dr' };
+    if (balance < 0) return { balance: Math.abs(balance), type: 'Cr' }; // Return positive number for Cr display
+    return { balance: 0, type: 'Zero' };
+  }, [transactions]);
+
 
   const backupData = () => {
     try {
@@ -169,20 +228,25 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   const restoreData = async (jsonData: string): Promise<boolean> => {
+    setIsLoading(true);
     try {
       const parsedData: AppData = JSON.parse(jsonData);
-      if (parsedData.accounts && parsedData.transactions) {
-        setAccounts(parsedData.accounts);
-        setTransactions(parsedData.transactions);
-        // saveData(); // Data will be saved by useEffect on accounts/transactions change
+      // Basic validation
+      if (typeof parsedData === 'object' && parsedData !== null && Array.isArray(parsedData.accounts) && Array.isArray(parsedData.transactions)) {
+        setAccounts(parsedData.accounts.sort((a,b) => a.name.localeCompare(b.name)));
+        setTransactions(parsedData.transactions.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime() || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+        // saveData will be called by useEffect due to state change
         toast({ title: "Success", description: "Data restored successfully." });
+        setIsLoading(false);
         return true;
       }
       toast({ title: "Error", description: "Invalid backup file format.", variant: "destructive" });
+      setIsLoading(false);
       return false;
     } catch (error) {
       console.error("Restore failed:", error);
       toast({ title: "Error", description: "Data restore failed. Invalid JSON.", variant: "destructive" });
+      setIsLoading(false);
       return false;
     }
   };
@@ -192,6 +256,8 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       accounts,
       transactions,
       addAccount,
+      updateAccount,
+      deleteAccount,
       getAccountById,
       getAccountByName,
       addTransaction,
@@ -200,6 +266,7 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       getTransactionById,
       getTransactionsForAccount,
       isSlipNoUnique,
+      calculateAccountBalance,
       backupData,
       restoreData,
       isLoading

@@ -1,3 +1,4 @@
+
 "use client";
 
 import * as React from 'react';
@@ -29,21 +30,32 @@ interface LedgerTableProps {
 }
 
 // PDF generation is mocked. In Electron, you'd use a library like `pdfmake` or Puppeteer.
-const generatePdf = (title: string, headers: string[], data: (string|number)[][], lineLimit?: number) => {
-  console.log(`Generating PDF: ${title}`);
-  console.log("Headers:", headers);
-  const dataToExport = lineLimit ? data.slice(0, lineLimit) : data;
-  console.log("Data:", dataToExport);
-  alert(`PDF "${title}" (up to line ${lineLimit || 'EOF'}) would be generated with ${dataToExport.length} rows. Check console for data.`);
+const generatePdfMock = (accountName: string, headers: string[], data: (string|number)[][], lineLimit?: number) => {
+  const reportTitle = `Transaction Report for ${accountName}`;
+  const generationDate = `Generated on: ${format(new Date(), 'M/d/yyyy')}`;
   
-  // Simulate download
-  const content = `Title: ${title}\nHeaders: ${headers.join(", ")}\nData:\n${dataToExport.map(row => row.join(", ")).join("\n")}`;
-  const blob = new Blob([content], { type: 'text/plain' });
+  console.log(reportTitle);
+  console.log(generationDate);
+  console.log("Headers:", headers);
+  
+  const dataToExport = lineLimit && lineLimit > 0 ? data.slice(0, lineLimit) : data;
+  console.log("Data:", dataToExport);
+  
+  const lineLimitText = lineLimit && lineLimit > 0 ? `_first_${lineLimit}_lines` : '_all_lines';
+  const fileName = `${accountName.replace(/\s+/g, '_')}_Ledger_${format(new Date(), 'yyyy-MM-dd')}${lineLimitText}.txt`;
+
+  alert(`PDF "${reportTitle}" (up to ${lineLimit && lineLimit > 0 ? lineLimit : 'all'} lines) would be generated as "${fileName}". Check console for data.`);
+  
+  // Simulate download with a text file
+  let content = `${reportTitle}\n${generationDate}\n\n`;
+  content += headers.join("\t") + "\n"; // Use tab separation for better text file readability
+  content += dataToExport.map(row => row.join("\t")).join("\n");
+  
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  const dateStr = new Date().toISOString().slice(0,10);
-  a.download = `${title.replace(/\s+/g, '_')}_${dateStr}${lineLimit ? `_L${lineLimit}` : ''}.txt`; // Simulate PDF with TXT
+  a.download = fileName;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -54,11 +66,11 @@ const generatePdf = (title: string, headers: string[], data: (string|number)[][]
 export function LedgerTable({ account }: LedgerTableProps) {
   const { transactions, getAccountById, deleteTransaction } = useAccounting();
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortColumn, setSortColumn] = useState<keyof LedgerEntry | null>('date');
+  const [sortColumn, setSortColumn] = useState<keyof LedgerEntry | 'balance' | null>('date');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [showPdfExportDialog, setShowPdfExportDialog] = useState(false);
   const [pdfLineLimit, setPdfLineLimit] = useState<string>('');
-   const [refreshKey, setRefreshKey] = useState(0); // Used to force re-render/re-fetch of transactions
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const handleTransactionUpdate = () => {
     setRefreshKey(prev => prev + 1);
@@ -77,18 +89,19 @@ export function LedgerTable({ account }: LedgerTableProps) {
     const mirroredTransactions = transactions
       .filter(tx => tx.codeAccountId === account.id)
       .map(tx => ({
-        ...tx, // Spread original tx first
-        id: tx.id, // Ensure original ID is used for operations
-        accountId: account.id, // This entry is for the current account's view
-        debit: tx.credit, // Swap debit/credit
+        ...tx,
+        id: tx.id, 
+        accountId: account.id,
+        debit: tx.credit,
         credit: tx.debit,
-        codeAccountId: tx.accountId, // Original account becomes the code
+        codeAccountId: tx.accountId,
         isMirror: true,
         originalAccountId: tx.accountId,
         displayCode: getAccountById(tx.accountId)?.name || 'Unknown Account',
       }));
     
     return [...directTransactions, ...mirroredTransactions];
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transactions, account.id, getAccountById, refreshKey]);
 
 
@@ -100,10 +113,10 @@ export function LedgerTable({ account }: LedgerTableProps) {
       entry.displayCode.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    if (sortColumn) {
+    if (sortColumn && sortColumn !== 'balance') { // Balance sorting is handled later with running balance
       processedEntries.sort((a, b) => {
-        let valA = a[sortColumn];
-        let valB = b[sortColumn];
+        let valA = a[sortColumn as keyof LedgerEntry];
+        let valB = b[sortColumn as keyof LedgerEntry];
 
         if (sortColumn === 'debit' || sortColumn === 'credit') {
           valA = Number(valA) || 0;
@@ -119,16 +132,48 @@ export function LedgerTable({ account }: LedgerTableProps) {
         if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
         if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
         
-        // Secondary sort by createdAt to maintain stable order for same values
         const dateA = new Date(a.createdAt).getTime();
         const dateB = new Date(b.createdAt).getTime();
-        return dateB - dateA; // Newest first
+        return dateB - dateA; 
       });
     }
     return processedEntries;
   }, [ledgerEntries, searchTerm, sortColumn, sortDirection]);
 
-  const handleSort = (column: keyof LedgerEntry) => {
+  const entriesWithRunningBalance = useMemo(() => {
+    let currentBalance = 0;
+    const entriesToProcess = [...filteredAndSortedEntries]; // Create a copy to sort if needed
+
+    // If sorting by date for balance calculation, ensure it's ascending for correct accumulation.
+    // However, the display sort might be different. For running balance, canonical order is by date.
+    // The `filteredAndSortedEntries` should already be sorted as per user's choice for display.
+    // The running balance should respect this display sort.
+
+    return entriesToProcess.map(entry => {
+      currentBalance += entry.debit - entry.credit;
+      return { ...entry, balance: currentBalance };
+    });
+  }, [filteredAndSortedEntries]);
+  
+  // Apply sorting for 'balance' column if selected, after running balance is calculated
+  const finalDisplayedEntries = useMemo(() => {
+    if (sortColumn === 'balance') {
+      return [...entriesWithRunningBalance].sort((a, b) => {
+        const balanceA = a.balance || 0;
+        const balanceB = b.balance || 0;
+        if (balanceA < balanceB) return sortDirection === 'asc' ? -1 : 1;
+        if (balanceA > balanceB) return sortDirection === 'asc' ? 1 : -1;
+        // Secondary sort by date if balances are equal
+        const dateA = new Date(a.date).getTime();
+        const dateB = new Date(b.date).getTime();
+        return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
+      });
+    }
+    return entriesWithRunningBalance;
+  }, [entriesWithRunningBalance, sortColumn, sortDirection]);
+
+
+  const handleSort = (column: keyof LedgerEntry | 'balance') => {
     if (sortColumn === column) {
       setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
     } else {
@@ -137,7 +182,7 @@ export function LedgerTable({ account }: LedgerTableProps) {
     }
   };
 
-  const renderSortArrow = (column: keyof LedgerEntry) => {
+  const renderSortArrow = (column: keyof LedgerEntry | 'balance') => {
     if (sortColumn === column) {
       return <ArrowDownUp className={`inline ml-1 h-3 w-3 transition-transform ${sortDirection === 'desc' ? 'rotate-180' : ''}`} />;
     }
@@ -145,30 +190,33 @@ export function LedgerTable({ account }: LedgerTableProps) {
   };
 
   const handleDelete = async (transactionId: string) => {
-    // Find the original transaction, whether direct or mirror
     const originalTx = transactions.find(tx => tx.id === transactionId);
     if (!originalTx) return;
-
     await deleteTransaction(originalTx.id);
-    handleTransactionUpdate(); // Refresh table
+    handleTransactionUpdate();
   };
   
   const handlePdfExport = () => {
-    const headers = ["No.", "Date", "Description", "Slip No.", "Debit", "Credit"];
-    const data = filteredAndSortedEntries.map((entry, index) => [
+    const headers = ["#", "Date", "Description", "Slip No.", "Debit", "Credit", "Balance"];
+    // Use finalDisplayedEntries for PDF to match what user sees including sort order.
+    // However, running balance in PDF should ideally always be chronological.
+    // For simplicity of this mock, we'll use the currently displayed order.
+    const dataForPdf = finalDisplayedEntries.map((entry, index) => [
       index + 1,
-      format(new Date(entry.date), 'dd/MM/yyyy'),
+      format(new Date(entry.date), 'dd MMM yyyy'), // Changed date format
       entry.description,
       entry.slipNo,
-      entry.debit > 0 ? entry.debit.toFixed(2) : '',
-      entry.credit > 0 ? entry.credit.toFixed(2) : '',
+      entry.debit > 0 ? entry.debit.toFixed(2) : '-',
+      entry.credit > 0 ? entry.credit.toFixed(2) : '-',
+      (entry.balance ?? 0).toFixed(2), // Use calculated running balance
     ]);
+    
     const limit = pdfLineLimit ? parseInt(pdfLineLimit, 10) : undefined;
     if (pdfLineLimit && (isNaN(limit!) || limit! <= 0)) {
-        alert("Please enter a valid positive line number.");
+        alert("Please enter a valid positive line number for PDF export.");
         return;
     }
-    generatePdf(`${account.name}_Ledger`, headers, data, limit);
+    generatePdfMock(account.name, headers, dataForPdf, limit);
     setShowPdfExportDialog(false);
     setPdfLineLimit('');
   };
@@ -194,15 +242,15 @@ export function LedgerTable({ account }: LedgerTableProps) {
                     <AlertDialogHeader>
                         <AlertDialogTitle>Export Ledger to PDF</AlertDialogTitle>
                         <AlertDialogDescription>
-                            Generate a PDF of the current ledger view. You can export all entries or up to a specific line. The "Code" column will be excluded.
+                            Generate a TXT (mock PDF) of the current ledger view. You can export all entries or up to a specific line. The "Code" column will be excluded.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <div className="space-y-4 my-4">
                         <Button onClick={() => { setPdfLineLimit(''); handlePdfExport(); }} className="w-full">
-                            <FileText className="mr-2 h-4 w-4" /> Generate Full PDF
+                            <FileText className="mr-2 h-4 w-4" /> Generate Full Report
                         </Button>
                         <div>
-                            <Label htmlFor="pdfLineLimit">Generate PDF up to line number (optional):</Label>
+                            <Label htmlFor="pdfLineLimit">Generate report up to line number (optional):</Label>
                             <Input 
                                 id="pdfLineLimit"
                                 type="number"
@@ -216,7 +264,7 @@ export function LedgerTable({ account }: LedgerTableProps) {
                     <AlertDialogFooter>
                         <AlertDialogCancel>Cancel</AlertDialogCancel>
                         <AlertDialogAction onClick={handlePdfExport} disabled={!!pdfLineLimit && parseInt(pdfLineLimit) <=0}>
-                            Generate Selected PDF
+                            Generate Selected Report
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>
@@ -239,29 +287,30 @@ export function LedgerTable({ account }: LedgerTableProps) {
           <Table>
             <TableHeader className="sticky top-0 bg-card z-10">
               <TableRow>
-                <TableHead className="w-[50px] cursor-pointer" onClick={() => handleSort('id')}>No. {renderSortArrow('id')}</TableHead>
+                <TableHead className="w-[50px]">No.</TableHead>
                 <TableHead className="cursor-pointer" onClick={() => handleSort('date')}>Date {renderSortArrow('date')}</TableHead>
                 <TableHead className="cursor-pointer" onClick={() => handleSort('description')}>Description {renderSortArrow('description')}</TableHead>
                 <TableHead className="cursor-pointer" onClick={() => handleSort('slipNo')}>Slip No. {renderSortArrow('slipNo')}</TableHead>
                 <TableHead className="text-right cursor-pointer" onClick={() => handleSort('debit')}>Debit {renderSortArrow('debit')}</TableHead>
                 <TableHead className="text-right cursor-pointer" onClick={() => handleSort('credit')}>Credit {renderSortArrow('credit')}</TableHead>
+                <TableHead className="text-right cursor-pointer" onClick={() => handleSort('balance')}>Balance {renderSortArrow('balance')}</TableHead>
                 <TableHead className="cursor-pointer" onClick={() => handleSort('displayCode')}>Code {renderSortArrow('displayCode')}</TableHead>
                 <TableHead className="w-[120px] text-center">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredAndSortedEntries.length > 0 ? (
-                filteredAndSortedEntries.map((entry, index) => {
-                  // Find the original transaction for editing/deleting, regardless of whether entry is direct or mirrored
+              {finalDisplayedEntries.length > 0 ? (
+                finalDisplayedEntries.map((entry, index) => {
                   const originalTransactionForActions = transactions.find(t => t.id === entry.id);
                   return (
-                  <TableRow key={entry.id + (entry.isMirror ? '-mirror' : '')} className={`${entry.isMirror ? 'bg-muted/30 hover:bg-muted/50' : ''} transition-colors`}>
+                  <TableRow key={entry.id + (entry.isMirror ? '-mirror' : '') + `-${index}`} className={`${entry.isMirror ? 'bg-muted/30 hover:bg-muted/50' : ''} transition-colors`}>
                     <TableCell>{index + 1}</TableCell>
                     <TableCell>{format(new Date(entry.date), 'dd/MM/yyyy')}</TableCell>
-                    <TableCell className="max-w-xs truncate" title={entry.description}>{entry.description}</TableCell>
+                    <TableCell className="max-w-[150px] truncate" title={entry.description}>{entry.description}</TableCell>
                     <TableCell>{entry.slipNo}</TableCell>
                     <TableCell className="text-right font-mono">{entry.debit > 0 ? entry.debit.toFixed(2) : '-'}</TableCell>
                     <TableCell className="text-right font-mono">{entry.credit > 0 ? entry.credit.toFixed(2) : '-'}</TableCell>
+                    <TableCell className="text-right font-mono">{(entry.balance ?? 0).toFixed(2)}</TableCell>
                     <TableCell>{entry.displayCode}</TableCell>
                     <TableCell className="text-center">
                       {originalTransactionForActions && (
@@ -296,7 +345,7 @@ export function LedgerTable({ account }: LedgerTableProps) {
                 )})
               ) : (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center h-24 text-muted-foreground">
+                  <TableCell colSpan={9} className="text-center h-24 text-muted-foreground">
                     No transactions found for this account.
                   </TableCell>
                 </TableRow>
@@ -309,7 +358,6 @@ export function LedgerTable({ account }: LedgerTableProps) {
   );
 }
 
-// Helper for Input component with icon
 interface InputWithIconProps extends React.InputHTMLAttributes<HTMLInputElement> {
   icon?: React.ReactNode;
 }
@@ -329,3 +377,4 @@ const InputWithIcon = React.forwardRef<HTMLInputElement, InputWithIconProps>(
   }
 );
 InputWithIcon.displayName = "InputWithIcon";
+
