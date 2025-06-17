@@ -24,42 +24,80 @@ import { ScrollArea } from '../ui/scroll-area';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Label } from '../ui/label';
 import { cn } from "@/lib/utils";
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+
 
 interface LedgerTableProps {
   account: Account;
 }
 
-// PDF generation is mocked. In Electron, you'd use a library like `pdfmake` or Puppeteer.
-const generatePdfMock = (accountName: string, headers: string[], data: (string|number)[][], lineLimit?: number) => {
-  const reportTitle = `Transaction Report for ${accountName}`;
-  const generationDate = `Generated on: ${format(new Date(), 'M/d/yyyy')}`;
-  
-  console.log(reportTitle);
-  console.log(generationDate);
-  console.log("Headers:", headers);
-  
-  const dataToExport = lineLimit && lineLimit > 0 ? data.slice(0, lineLimit) : data;
-  console.log("Data:", dataToExport);
-  
-  const lineLimitText = lineLimit && lineLimit > 0 ? `_first_${lineLimit}_lines` : '_all_lines';
-  const fileName = `${accountName.replace(/\s+/g, '_')}_Ledger_${format(new Date(), 'yyyy-MM-dd')}${lineLimitText}.txt`;
+const generatePdf = (accountName: string, ledgerData: (string|number|null|undefined)[][], lineLimit?: number) => {
+  const doc = new jsPDF();
 
-  alert(`PDF "${reportTitle}" (up to ${lineLimit && lineLimit > 0 ? lineLimit : 'all'} lines) would be generated as "${fileName}". Check console for data.`);
-  
-  // Simulate download with a text file
-  let content = `${reportTitle}\n${generationDate}\n\n`;
-  content += headers.join("\t") + "\n"; // Use tab separation for better text file readability
-  content += dataToExport.map(row => row.join("\t")).join("\n");
-  
-  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = fileName;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  const reportTitle = `Transaction Report for ${accountName}`;
+  const generationDate = `Generated on: ${format(new Date(), 'dd/MM/yyyy')}`; // Format consistent with image
+
+  doc.setFontSize(18);
+  doc.text(reportTitle, 14, 22); // Adjusted Y for spacing
+  doc.setFontSize(11);
+  doc.setTextColor(100); // Gray color for subtitle
+  doc.text(generationDate, 14, 30);
+
+  const tableColumn = ["#", "Date", "Description", "Slip No.", "Debit", "Credit", "Balance"];
+  const tableRows: (string | number)[][] = [];
+
+  const dataToExport = lineLimit && lineLimit > 0 ? ledgerData.slice(0, lineLimit) : ledgerData;
+
+  dataToExport.forEach(row => {
+    // row structure is [index, date, desc, slip, debit, credit, balance]
+    const formattedRow = [
+      row[0] ?? '', // #
+      row[1] ?? '', // Date
+      row[2] ?? '', // Description
+      row[3] ?? '', // Slip No.
+      row[4] === '-' || row[4] == null ? '-' : Number(row[4]).toFixed(2), // Debit
+      row[5] === '-' || row[5] == null ? '-' : Number(row[5]).toFixed(2), // Credit
+      row[6] == null ? '-' : Number(row[6]).toFixed(2) // Balance
+    ];
+    tableRows.push(formattedRow as (string | number)[]);
+  });
+
+  autoTable(doc, {
+    head: [tableColumn],
+    body: tableRows,
+    startY: 38, // Start table below title and subtitle
+    headStyles: {
+      fillColor: [34, 49, 63], // Dark blue/grayish header (like image)
+      textColor: [255, 255, 255], // White text
+      fontStyle: 'bold',
+    },
+    theme: 'striped', // 'striped', 'grid', 'plain'
+    styles: {
+      font: 'helvetica',
+      fontSize: 9,
+      cellPadding: 2,
+      overflow: 'linebreak', // Handle long descriptions
+    },
+    columnStyles: {
+      0: { halign: 'center', cellWidth: 10 }, // #
+      2: { cellWidth: 'auto' }, // Description - let it take space
+      4: { halign: 'right' }, // Debit
+      5: { halign: 'right' }, // Credit
+      6: { halign: 'right' }, // Balance
+    },
+    didParseCell: function (data) {
+        // For Description column, prevent excessively long words from breaking layout
+        if (data.column.dataKey === 2 && typeof data.cell.text === 'string') {
+            // This is a simple word wrap, more complex logic might be needed for specific cases
+             data.cell.styles.cellWidth = 'wrap';
+        }
+    }
+  });
+
+  const lineLimitText = lineLimit && lineLimit > 0 ? `_first_${lineLimit}_lines` : '_all_lines';
+  const fileName = `${accountName.replace(/\s+/g, '_')}_Ledger_${format(new Date(), 'yyyy-MM-dd')}${lineLimitText}.pdf`;
+  doc.save(fileName);
 };
 
 
@@ -113,7 +151,7 @@ export function LedgerTable({ account }: LedgerTableProps) {
       entry.displayCode.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    if (sortColumn && sortColumn !== 'balance') { // Balance sorting is handled later with running balance
+    if (sortColumn && sortColumn !== 'balance') { 
       processedEntries.sort((a, b) => {
         let valA = a[sortColumn as keyof LedgerEntry];
         let valB = b[sortColumn as keyof LedgerEntry];
@@ -142,28 +180,39 @@ export function LedgerTable({ account }: LedgerTableProps) {
 
   const entriesWithRunningBalance = useMemo(() => {
     let currentBalance = 0;
-    const entriesToProcess = [...filteredAndSortedEntries]; // Create a copy to sort if needed
-
-    // If sorting by date for balance calculation, ensure it's ascending for correct accumulation.
-    // However, the display sort might be different. For running balance, canonical order is by date.
-    // The `filteredAndSortedEntries` should already be sorted as per user's choice for display.
-    // The running balance should respect this display sort.
-
-    return entriesToProcess.map(entry => {
-      currentBalance += entry.debit - entry.credit;
-      return { ...entry, balance: currentBalance };
+    const entriesToProcess = [...filteredAndSortedEntries]; 
+    
+    // Create a temporary array sorted strictly by date for balance calculation
+    const chronologicallySortedForBalance = [...ledgerEntries].sort((a, b) => {
+      const dateA = new Date(a.date).getTime();
+      const dateB = new Date(b.date).getTime();
+      if (dateA !== dateB) return dateA - dateB;
+      // If dates are same, sort by creation time to maintain order of entry
+      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
     });
-  }, [filteredAndSortedEntries]);
+
+    const balanceMap = new Map<string, number>();
+    currentBalance = 0;
+    chronologicallySortedForBalance.forEach(entry => {
+      currentBalance += entry.debit - entry.credit;
+      balanceMap.set(entry.id + (entry.isMirror ? '-mirror' : ''), currentBalance);
+    });
+    
+    return entriesToProcess.map(entry => ({
+      ...entry,
+      balance: balanceMap.get(entry.id + (entry.isMirror ? '-mirror' : '')) ?? 0,
+    }));
+
+  }, [filteredAndSortedEntries, ledgerEntries]);
   
-  // Apply sorting for 'balance' column if selected, after running balance is calculated
   const finalDisplayedEntries = useMemo(() => {
     if (sortColumn === 'balance') {
       return [...entriesWithRunningBalance].sort((a, b) => {
-        const balanceA = a.balance || 0;
-        const balanceB = b.balance || 0;
+        const balanceA = a.balance ?? 0;
+        const balanceB = b.balance ?? 0;
         if (balanceA < balanceB) return sortDirection === 'asc' ? -1 : 1;
         if (balanceA > balanceB) return sortDirection === 'asc' ? 1 : -1;
-        // Secondary sort by date if balances are equal
+        
         const dateA = new Date(a.date).getTime();
         const dateB = new Date(b.date).getTime();
         return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
@@ -197,18 +246,14 @@ export function LedgerTable({ account }: LedgerTableProps) {
   };
   
   const handlePdfExport = () => {
-    const headers = ["#", "Date", "Description", "Slip No.", "Debit", "Credit", "Balance"];
-    // Use finalDisplayedEntries for PDF to match what user sees including sort order.
-    // However, running balance in PDF should ideally always be chronological.
-    // For simplicity of this mock, we'll use the currently displayed order.
     const dataForPdf = finalDisplayedEntries.map((entry, index) => [
       index + 1,
-      format(new Date(entry.date), 'dd MMM yyyy'), // Changed date format
+      format(new Date(entry.date), 'dd MMM yyyy'),
       entry.description,
       entry.slipNo,
-      entry.debit > 0 ? entry.debit.toFixed(2) : '-',
-      entry.credit > 0 ? entry.credit.toFixed(2) : '-',
-      (entry.balance ?? 0).toFixed(2), // Use calculated running balance
+      entry.debit > 0 ? entry.debit : '-', // Pass raw number or '-'
+      entry.credit > 0 ? entry.credit : '-', // Pass raw number or '-'
+      entry.balance ?? 0, // Pass raw balance
     ]);
     
     const limit = pdfLineLimit ? parseInt(pdfLineLimit, 10) : undefined;
@@ -216,7 +261,7 @@ export function LedgerTable({ account }: LedgerTableProps) {
         alert("Please enter a valid positive line number for PDF export.");
         return;
     }
-    generatePdfMock(account.name, headers, dataForPdf, limit);
+    generatePdf(account.name, dataForPdf, limit);
     setShowPdfExportDialog(false);
     setPdfLineLimit('');
   };
@@ -242,12 +287,12 @@ export function LedgerTable({ account }: LedgerTableProps) {
                     <AlertDialogHeader>
                         <AlertDialogTitle>Export Ledger to PDF</AlertDialogTitle>
                         <AlertDialogDescription>
-                            Generate a TXT (mock PDF) of the current ledger view. You can export all entries or up to a specific line. The "Code" column will be excluded.
+                            Generate a PDF of the current ledger view. You can export all entries or up to a specific line.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <div className="space-y-4 my-4">
                         <Button onClick={() => { setPdfLineLimit(''); handlePdfExport(); }} className="w-full">
-                            <FileText className="mr-2 h-4 w-4" /> Generate Full Report
+                            <FileText className="mr-2 h-4 w-4" /> Generate Full Report (PDF)
                         </Button>
                         <div>
                             <Label htmlFor="pdfLineLimit">Generate report up to line number (optional):</Label>
@@ -264,7 +309,7 @@ export function LedgerTable({ account }: LedgerTableProps) {
                     <AlertDialogFooter>
                         <AlertDialogCancel>Cancel</AlertDialogCancel>
                         <AlertDialogAction onClick={handlePdfExport} disabled={!!pdfLineLimit && parseInt(pdfLineLimit) <=0}>
-                            Generate Selected Report
+                            Generate Selected Report (PDF)
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>
@@ -377,4 +422,3 @@ const InputWithIcon = React.forwardRef<HTMLInputElement, InputWithIconProps>(
   }
 );
 InputWithIcon.displayName = "InputWithIcon";
-
