@@ -3,10 +3,15 @@
 
 import type React from 'react';
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import type { Account, Transaction, AppData, LedgerEntry } from '@/lib/types';
+import type { Account, Transaction, AppData } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 
 const LOCAL_STORAGE_KEY = 'ledgerLocalData';
+
+interface SlipNoValidationResult {
+  unique: boolean;
+  conflictingAccountName?: string;
+}
 
 interface AccountingContextType {
   accounts: Account[];
@@ -21,7 +26,7 @@ interface AccountingContextType {
   deleteTransaction: (transactionId: string) => Promise<void>;
   getTransactionById: (id: string) => Transaction | undefined;
   getTransactionsForAccount: (accountId: string) => Transaction[];
-  isSlipNoUnique: (slipNo: string, currentTransactionId?: string) => boolean;
+  isSlipNoUnique: (slipNo: string, currentTransactionId?: string) => SlipNoValidationResult;
   calculateAccountBalance: (accountId: string) => { balance: number; type: 'Dr' | 'Cr' | 'Zero' };
   backupData: () => void;
   restoreData: (jsonData: string) => Promise<boolean>;
@@ -126,19 +131,30 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     toast({ title: "Success", description: `Account "${accountToDelete.name}" and its transactions deleted.` });
   };
 
-  const isSlipNoUnique = useCallback((slipNo: string, currentTransactionId?: string) => {
-    if (!slipNo || slipNo.trim() === '') return true; // Allow empty or whitespace slip numbers if desired, or enforce here
-    return !transactions.some(tx => tx.slipNo.trim().toLowerCase() === slipNo.trim().toLowerCase() && tx.id !== currentTransactionId);
-  }, [transactions]);
+  const isSlipNoUnique = useCallback((slipNo: string, currentTransactionId?: string): SlipNoValidationResult => {
+    if (!slipNo || slipNo.trim() === '') return { unique: true };
+    const conflictingTx = transactions.find(tx =>
+      tx.slipNo.trim().toLowerCase() === slipNo.trim().toLowerCase() && tx.id !== currentTransactionId
+    );
+
+    if (conflictingTx) {
+      const account = getAccountById(conflictingTx.accountId);
+      return {
+        unique: false,
+        conflictingAccountName: account?.name || 'an unknown account',
+      };
+    }
+    return { unique: true };
+  }, [transactions, getAccountById]);
 
   const addTransaction = async (txData: Omit<Transaction, 'id' | 'createdAt'>): Promise<Transaction | null> => {
-    if (txData.slipNo.trim() && !isSlipNoUnique(txData.slipNo)) {
-      const existingTx = transactions.find(t => t.slipNo.trim().toLowerCase() === txData.slipNo.trim().toLowerCase());
-      const existingAcc = existingTx ? getAccountById(existingTx.accountId) : null;
-      const errorMessage = existingAcc
-        ? `Slip No. "${txData.slipNo}" already used in account "${existingAcc.name}".`
-        : `Slip No. "${txData.slipNo}" is already in use.`;
-      toast({ title: "Error", description: errorMessage, variant: "destructive" });
+    const slipValidation = isSlipNoUnique(txData.slipNo.trim());
+    if (!slipValidation.unique) {
+      toast({
+        title: "Error",
+        description: `Slip No. "${txData.slipNo}" already used in account "${slipValidation.conflictingAccountName}".`,
+        variant: "destructive"
+      });
       return null;
     }
 
@@ -153,13 +169,13 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   const updateTransaction = async (updatedTx: Transaction): Promise<Transaction | null> => {
-     if (updatedTx.slipNo.trim() && !isSlipNoUnique(updatedTx.slipNo, updatedTx.id)) {
-      const existingTx = transactions.find(t => t.slipNo.trim().toLowerCase() === updatedTx.slipNo.trim().toLowerCase() && t.id !== updatedTx.id);
-      const existingAcc = existingTx ? getAccountById(existingTx.accountId) : null;
-      const errorMessage = existingAcc
-        ? `Slip No. "${updatedTx.slipNo}" already used in account "${existingAcc.name}".`
-        : `Slip No. "${updatedTx.slipNo}" is already in use.`;
-      toast({ title: "Error", description: errorMessage, variant: "destructive" });
+     const slipValidation = isSlipNoUnique(updatedTx.slipNo.trim(), updatedTx.id);
+     if (!slipValidation.unique) {
+      toast({
+        title: "Error",
+        description: `Slip No. "${updatedTx.slipNo}" already used in account "${slipValidation.conflictingAccountName}".`,
+        variant: "destructive"
+      });
       return null;
     }
 
@@ -283,3 +299,4 @@ export const useAccounting = (): AccountingContextType => {
   }
   return context;
 };
+

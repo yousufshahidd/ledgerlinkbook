@@ -31,7 +31,7 @@ const getDefaultDate = () => new Date().toISOString().split('T')[0];
 const NONE_SELECT_VALUE_INTERNAL = "__NONE_ACCOUNT_ID__"; // Unique value for the "None" option
 
 export function TransactionFormDialog({ accountId, transactionToEdit, onFormSubmit }: TransactionFormDialogProps) {
-  const { accounts, addTransaction, updateTransaction, getAccountById, isSlipNoUnique: contextIsSlipNoUnique } = useAccounting();
+  const { accounts, addTransaction, updateTransaction, isSlipNoUnique: contextIsSlipNoUnique } = useAccounting();
   const { toast } = useToast();
   
   const [isOpen, setIsOpen] = useState(false);
@@ -65,12 +65,12 @@ export function TransactionFormDialog({ accountId, transactionToEdit, onFormSubm
   }, [transactionToEdit, isOpen]); // Reset when dialog opens or transactionToEdit changes
 
   const validateSlipNo = () => {
-    if (slipNo.trim() && !contextIsSlipNoUnique(slipNo.trim(), transactionToEdit?.id)) {
-      // Find the conflicting transaction to provide a more detailed error message.
-      // This requires access to all transactions, which useAccounting should provide.
-      // For now, a generic message or one based on current accounts.
-      setSlipNoError(`Slip No. "${slipNo.trim()}" is already in use.`);
-      return false;
+    if (slipNo.trim()) {
+      const validationResult = contextIsSlipNoUnique(slipNo.trim(), transactionToEdit?.id);
+      if (!validationResult.unique) {
+        setSlipNoError(`Slip No. "${slipNo.trim()}" is already in use (in account: ${validationResult.conflictingAccountName || 'N/A'}).`);
+        return false;
+      }
     }
     setSlipNoError(null);
     return true;
@@ -197,5 +197,3 @@ export function TransactionFormDialog({ accountId, transactionToEdit, onFormSubm
     </Dialog>
   );
 }
-
-    
