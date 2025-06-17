@@ -56,9 +56,9 @@ const generatePdf = (accountName: string, ledgerData: (string|number|null|undefi
       row[1] ?? '', // Date
       row[2] ?? '', // Description
       row[3] ?? '', // Slip No.
-      row[4] === '-' || row[4] == null ? '-' : Number(row[4]).toFixed(2), // Debit
-      row[5] === '-' || row[5] == null ? '-' : Number(row[5]).toFixed(2), // Credit
-      row[6] == null ? '-' : Number(row[6]).toFixed(2) // Balance
+      row[4] === '-' || row[4] == null ? '-' : Number(row[4]).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }), // Debit
+      row[5] === '-' || row[5] == null ? '-' : Number(row[5]).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }), // Credit
+      row[6] == null ? '-' : Number(row[6]).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) // Balance
     ];
     tableRows.push(formattedRow as (string | number)[]);
   });
@@ -251,9 +251,9 @@ export function LedgerTable({ account }: LedgerTableProps) {
       format(new Date(entry.date), 'dd MMM yyyy'),
       entry.description,
       entry.slipNo,
-      entry.debit > 0 ? entry.debit : '-', // Pass raw number or '-'
-      entry.credit > 0 ? entry.credit : '-', // Pass raw number or '-'
-      entry.balance ?? 0, // Pass raw balance
+      entry.debit > 0 ? entry.debit : '-', 
+      entry.credit > 0 ? entry.credit : '-', 
+      entry.balance ?? 0, 
     ]);
     
     const limit = pdfLineLimit ? parseInt(pdfLineLimit, 10) : undefined;
@@ -353,9 +353,9 @@ export function LedgerTable({ account }: LedgerTableProps) {
                     <TableCell>{format(new Date(entry.date), 'dd/MM/yyyy')}</TableCell>
                     <TableCell className="max-w-[150px] truncate" title={entry.description}>{entry.description}</TableCell>
                     <TableCell>{entry.slipNo}</TableCell>
-                    <TableCell className="text-right font-mono">{entry.debit > 0 ? entry.debit.toFixed(2) : '-'}</TableCell>
-                    <TableCell className="text-right font-mono">{entry.credit > 0 ? entry.credit.toFixed(2) : '-'}</TableCell>
-                    <TableCell className="text-right font-mono">{(entry.balance ?? 0).toFixed(2)}</TableCell>
+                    <TableCell className="text-right font-mono">{entry.debit > 0 ? entry.debit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}</TableCell>
+                    <TableCell className="text-right font-mono">{entry.credit > 0 ? entry.credit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}</TableCell>
+                    <TableCell className="text-right font-mono">{(entry.balance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                     <TableCell>{entry.displayCode}</TableCell>
                     <TableCell className="text-center">
                       {originalTransactionForActions && (
@@ -422,3 +422,4 @@ const InputWithIcon = React.forwardRef<HTMLInputElement, InputWithIconProps>(
   }
 );
 InputWithIcon.displayName = "InputWithIcon";
+
