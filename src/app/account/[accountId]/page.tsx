@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useParams, useRouter } from 'next/navigation';
@@ -7,6 +8,13 @@ import { Button } from '@/components/ui/button';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+
+export async function generateStaticParams() {
+  // For an Electron app with dynamic, user-created data,
+  // we don't pre-render specific account pages at build time.
+  // Return an empty array. Routes will be client-side rendered.
+  return [];
+}
 
 export default function AccountPage() {
   const params = useParams();
