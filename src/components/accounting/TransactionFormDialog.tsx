@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, type FormEvent } from 'react';
@@ -18,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PlusCircle, Edit } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
+import { useToast } from '@/hooks/use-toast';
 
 interface TransactionFormDialogProps {
   accountId: string;
@@ -26,9 +28,11 @@ interface TransactionFormDialogProps {
 }
 
 const getDefaultDate = () => new Date().toISOString().split('T')[0];
+const NONE_SELECT_VALUE_INTERNAL = "__NONE_ACCOUNT_ID__"; // Unique value for the "None" option
 
 export function TransactionFormDialog({ accountId, transactionToEdit, onFormSubmit }: TransactionFormDialogProps) {
-  const { accounts, addTransaction, updateTransaction, getAccountById, getAccountByName, isSlipNoUnique: contextIsSlipNoUnique } = useAccounting();
+  const { accounts, addTransaction, updateTransaction, getAccountById, isSlipNoUnique: contextIsSlipNoUnique } = useAccounting();
+  const { toast } = useToast();
   
   const [isOpen, setIsOpen] = useState(false);
   const [date, setDate] = useState(transactionToEdit?.date || getDefaultDate());
@@ -57,13 +61,14 @@ export function TransactionFormDialog({ accountId, transactionToEdit, onFormSubm
       setTransactionType('debit');
       setCodeAccountId('');
     }
+    setSlipNoError(null); // Reset slip error when dialog opens or data changes
   }, [transactionToEdit, isOpen]); // Reset when dialog opens or transactionToEdit changes
 
   const validateSlipNo = () => {
     if (slipNo.trim() && !contextIsSlipNoUnique(slipNo.trim(), transactionToEdit?.id)) {
-      const conflictingTx = accounts.flatMap(acc => getAccountById(acc.id)?.name ? [] : []).find((tx: any) => tx.slipNo === slipNo.trim() && tx.id !== transactionToEdit?.id); // This needs transactions not accounts
-      // A proper way to get conflicting tx: Iterate all transactions in context.
-      // For now, simple message.
+      // Find the conflicting transaction to provide a more detailed error message.
+      // This requires access to all transactions, which useAccounting should provide.
+      // For now, a generic message or one based on current accounts.
       setSlipNoError(`Slip No. "${slipNo.trim()}" is already in use.`);
       return false;
     }
@@ -77,7 +82,7 @@ export function TransactionFormDialog({ accountId, transactionToEdit, onFormSubm
 
     const numericAmount = parseFloat(amount);
     if (isNaN(numericAmount) || numericAmount <= 0) {
-      // toast error
+      toast({ title: "Error", description: "Amount must be a positive number.", variant: "destructive" });
       return;
     }
 
@@ -88,7 +93,7 @@ export function TransactionFormDialog({ accountId, transactionToEdit, onFormSubm
       slipNo: slipNo.trim(),
       debit: transactionType === 'debit' ? numericAmount : 0,
       credit: transactionType === 'credit' ? numericAmount : 0,
-      codeAccountId: codeAccountId || undefined,
+      codeAccountId: codeAccountId || undefined, // Ensure undefined if empty string
     };
 
     let success = false;
@@ -103,7 +108,6 @@ export function TransactionFormDialog({ accountId, transactionToEdit, onFormSubm
     if (success) {
       setIsOpen(false);
       onFormSubmit?.(); // Call callback if provided
-      // Reset form fields for next time (handled by useEffect on isOpen)
     }
   };
   
@@ -163,12 +167,17 @@ export function TransactionFormDialog({ accountId, transactionToEdit, onFormSubm
           </div>
           <div>
             <Label htmlFor="codeAccountId">Code (Link to another account)</Label>
-            <Select value={codeAccountId} onValueChange={setCodeAccountId}>
+            <Select
+              value={codeAccountId || NONE_SELECT_VALUE_INTERNAL}
+              onValueChange={(value) => {
+                setCodeAccountId(value === NONE_SELECT_VALUE_INTERNAL ? '' : value);
+              }}
+            >
               <SelectTrigger id="codeAccountId">
                 <SelectValue placeholder="None" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">None</SelectItem>
+                <SelectItem value={NONE_SELECT_VALUE_INTERNAL}>None</SelectItem>
                 {otherAccounts.map(acc => (
                   <SelectItem key={acc.id} value={acc.id}>
                     {acc.name}
@@ -188,3 +197,5 @@ export function TransactionFormDialog({ accountId, transactionToEdit, onFormSubm
     </Dialog>
   );
 }
+
+    
