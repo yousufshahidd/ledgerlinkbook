@@ -64,7 +64,7 @@
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "concurrently": "^8.2.2",
-    "electron": "^31.2.1",
+    "electron": "^31.7.7",
     "electron-builder": "^25.0.3",
     "genkit-cli": "^1.8.0",
     "postcss": "^8",
