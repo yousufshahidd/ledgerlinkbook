@@ -3,15 +3,10 @@
 
 import type React from 'react';
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import type { Account, Transaction, AppData } from '@/lib/types';
+import type { Account, Transaction, AppData, SlipNoValidationResult } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 
 const LOCAL_STORAGE_KEY = 'ledgerLocalData';
-
-interface SlipNoValidationResult {
-  unique: boolean;
-  conflictingAccountName?: string;
-}
 
 interface AccountingContextType {
   accounts: Account[];
@@ -132,7 +127,7 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   const isSlipNoUnique = useCallback((slipNo: string, currentTransactionId?: string): SlipNoValidationResult => {
-    if (!slipNo || slipNo.trim() === '') return { unique: true };
+    if (!slipNo || slipNo.trim() === '') return { unique: true }; // Allow empty slip numbers if desired, or enforce uniqueness
     const conflictingTx = transactions.find(tx =>
       tx.slipNo.trim().toLowerCase() === slipNo.trim().toLowerCase() && tx.id !== currentTransactionId
     );
@@ -142,6 +137,9 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       return {
         unique: false,
         conflictingAccountName: account?.name || 'an unknown account',
+        conflictingTransactionDate: conflictingTx.date,
+        conflictingTransactionDescription: conflictingTx.description,
+        conflictingTransactionSlipNo: conflictingTx.slipNo,
       };
     }
     return { unique: true };
@@ -150,9 +148,10 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const addTransaction = async (txData: Omit<Transaction, 'id' | 'createdAt'>): Promise<Transaction | null> => {
     const slipValidation = isSlipNoUnique(txData.slipNo.trim());
     if (!slipValidation.unique) {
+      const desc = `Slip No. "${txData.slipNo}" already used. Original in A/C: ${slipValidation.conflictingAccountName || 'N/A'}, Date: ${slipValidation.conflictingTransactionDate ? new Date(slipValidation.conflictingTransactionDate).toLocaleDateString() : 'N/A'}, Desc: ${slipValidation.conflictingTransactionDescription || 'N/A'}.`;
       toast({
-        title: "Error",
-        description: `Slip No. "${txData.slipNo}" already used in account "${slipValidation.conflictingAccountName}".`,
+        title: "Error: Duplicate Slip No.",
+        description: desc,
         variant: "destructive"
       });
       return null;
@@ -171,9 +170,10 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const updateTransaction = async (updatedTx: Transaction): Promise<Transaction | null> => {
      const slipValidation = isSlipNoUnique(updatedTx.slipNo.trim(), updatedTx.id);
      if (!slipValidation.unique) {
+      const desc = `Slip No. "${updatedTx.slipNo}" already used. Original in A/C: ${slipValidation.conflictingAccountName || 'N/A'}, Date: ${slipValidation.conflictingTransactionDate ? new Date(slipValidation.conflictingTransactionDate).toLocaleDateString() : 'N/A'}, Desc: ${slipValidation.conflictingTransactionDescription || 'N/A'}.`;
       toast({
-        title: "Error",
-        description: `Slip No. "${updatedTx.slipNo}" already used in account "${slipValidation.conflictingAccountName}".`,
+        title: "Error: Duplicate Slip No.",
+        description: desc,
         variant: "destructive"
       });
       return null;
@@ -200,24 +200,29 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, [transactions]);
 
   const calculateAccountBalance = useCallback((accountId: string): { balance: number; type: 'Dr' | 'Cr' | 'Zero' } => {
-    const accountTransactions = transactions.reduce((acc, tx) => {
-      if (tx.accountId === accountId) {
-        acc.push(tx);
-      } else if (tx.codeAccountId === accountId) {
-        // Mirrored transaction: swap debit/credit
-        acc.push({
-          ...tx,
-          debit: tx.credit,
-          credit: tx.debit,
-        });
-      }
-      return acc;
-    }, [] as Transaction[]);
+    let balance = 0;
+     // Sort transactions chronologically for accurate balance calculation
+    const accountSpecificTransactions = transactions
+      .filter(tx => tx.accountId === accountId || tx.codeAccountId === accountId)
+      .sort((a, b) => {
+        const dateA = new Date(a.date).getTime();
+        const dateB = new Date(b.date).getTime();
+        if (dateA !== dateB) return dateA - dateB;
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      });
 
-    const balance = accountTransactions.reduce((sum, tx) => sum + tx.debit - tx.credit, 0);
+    accountSpecificTransactions.forEach(tx => {
+      if (tx.accountId === accountId) { // Direct transaction
+        balance += tx.debit;
+        balance -= tx.credit;
+      } else if (tx.codeAccountId === accountId) { // Mirrored transaction
+        balance += tx.credit; // Mirrored debit
+        balance -= tx.debit;  // Mirrored credit
+      }
+    });
 
     if (balance > 0) return { balance, type: 'Dr' };
-    if (balance < 0) return { balance: Math.abs(balance), type: 'Cr' }; // Return positive number for Cr display
+    if (balance < 0) return { balance: Math.abs(balance), type: 'Cr' };
     return { balance: 0, type: 'Zero' };
   }, [transactions]);
 
@@ -247,11 +252,9 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setIsLoading(true);
     try {
       const parsedData: AppData = JSON.parse(jsonData);
-      // Basic validation
       if (typeof parsedData === 'object' && parsedData !== null && Array.isArray(parsedData.accounts) && Array.isArray(parsedData.transactions)) {
         setAccounts(parsedData.accounts.sort((a,b) => a.name.localeCompare(b.name)));
         setTransactions(parsedData.transactions.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime() || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
-        // saveData will be called by useEffect due to state change
         toast({ title: "Success", description: "Data restored successfully." });
         setIsLoading(false);
         return true;
@@ -299,4 +302,3 @@ export const useAccounting = (): AccountingContextType => {
   }
   return context;
 };
-

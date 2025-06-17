@@ -27,3 +27,11 @@ export interface AppData {
   accounts: Account[];
   transactions: Transaction[];
 }
+
+export interface SlipNoValidationResult {
+  unique: boolean;
+  conflictingAccountName?: string;
+  conflictingTransactionDate?: string;
+  conflictingTransactionDescription?: string;
+  conflictingTransactionSlipNo?: string;
+}

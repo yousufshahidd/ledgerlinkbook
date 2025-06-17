@@ -28,7 +28,7 @@ interface TransactionFormDialogProps {
 }
 
 const getDefaultDate = () => new Date().toISOString().split('T')[0];
-const NONE_SELECT_VALUE_INTERNAL = "__NONE_ACCOUNT_ID__"; // Unique value for the "None" option
+const NONE_SELECT_VALUE_INTERNAL = "__NONE_ACCOUNT_ID__"; 
 
 export function TransactionFormDialog({ accountId, transactionToEdit, onFormSubmit }: TransactionFormDialogProps) {
   const { accounts, addTransaction, updateTransaction, isSlipNoUnique: contextIsSlipNoUnique } = useAccounting();
@@ -53,7 +53,6 @@ export function TransactionFormDialog({ accountId, transactionToEdit, onFormSubm
       setTransactionType(transactionToEdit.debit > 0 ? 'debit' : 'credit');
       setCodeAccountId(transactionToEdit.codeAccountId || '');
     } else {
-      // Reset for new transaction
       setDate(getDefaultDate());
       setDescription('');
       setSlipNo('');
@@ -61,14 +60,15 @@ export function TransactionFormDialog({ accountId, transactionToEdit, onFormSubm
       setTransactionType('debit');
       setCodeAccountId('');
     }
-    setSlipNoError(null); // Reset slip error when dialog opens or data changes
-  }, [transactionToEdit, isOpen]); // Reset when dialog opens or transactionToEdit changes
+    setSlipNoError(null);
+  }, [transactionToEdit, isOpen]);
 
   const validateSlipNo = () => {
     if (slipNo.trim()) {
       const validationResult = contextIsSlipNoUnique(slipNo.trim(), transactionToEdit?.id);
       if (!validationResult.unique) {
-        setSlipNoError(`Slip No. "${slipNo.trim()}" is already in use (in account: ${validationResult.conflictingAccountName || 'N/A'}).`);
+        const errorMsg = `Slip No. "${slipNo.trim()}" is already in use. Original entry in account: "${validationResult.conflictingAccountName || 'N/A'}" (Date: ${validationResult.conflictingTransactionDate ? new Date(validationResult.conflictingTransactionDate).toLocaleDateString() : 'N/A'}, Desc: "${validationResult.conflictingTransactionDescription || 'N/A'}").`;
+        setSlipNoError(errorMsg);
         return false;
       }
     }
@@ -78,7 +78,10 @@ export function TransactionFormDialog({ accountId, transactionToEdit, onFormSubm
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!validateSlipNo()) return;
+    if (!validateSlipNo()) {
+      // Toast notification for duplicate slip is handled by addTransaction/updateTransaction now
+      return;
+    }
 
     const numericAmount = parseFloat(amount);
     if (isNaN(numericAmount) || numericAmount <= 0) {
@@ -93,7 +96,7 @@ export function TransactionFormDialog({ accountId, transactionToEdit, onFormSubm
       slipNo: slipNo.trim(),
       debit: transactionType === 'debit' ? numericAmount : 0,
       credit: transactionType === 'credit' ? numericAmount : 0,
-      codeAccountId: codeAccountId || undefined, // Ensure undefined if empty string
+      codeAccountId: codeAccountId || undefined, 
     };
 
     let success = false;
@@ -107,7 +110,7 @@ export function TransactionFormDialog({ accountId, transactionToEdit, onFormSubm
 
     if (success) {
       setIsOpen(false);
-      onFormSubmit?.(); // Call callback if provided
+      onFormSubmit?.(); 
     }
   };
   
