@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from 'react';
 import { useState, useMemo, useEffect } from 'react';
 import type { Transaction, Account, LedgerEntry } from '@/lib/types';
 import { useAccounting } from '@/context/AccountingContext';
@@ -20,6 +21,8 @@ import { Input } from '../ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { ScrollArea } from '../ui/scroll-area';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
+import { Label } from '../ui/label';
+import { cn } from "@/lib/utils";
 
 interface LedgerTableProps {
   account: Account;
@@ -221,7 +224,7 @@ export function LedgerTable({ account }: LedgerTableProps) {
           </div>
         </div>
         <div className="mt-4">
-          <Input
+          <InputWithIcon
             placeholder="Search transactions (Date, Desc, Slip, Code)..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
