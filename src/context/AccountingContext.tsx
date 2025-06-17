@@ -127,7 +127,7 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   const isSlipNoUnique = useCallback((slipNo: string, currentTransactionId?: string): SlipNoValidationResult => {
-    if (!slipNo || slipNo.trim() === '') return { unique: true }; // Allow empty slip numbers if desired, or enforce uniqueness
+    if (!slipNo || slipNo.trim() === '') return { unique: true }; 
     const conflictingTx = transactions.find(tx =>
       tx.slipNo.trim().toLowerCase() === slipNo.trim().toLowerCase() && tx.id !== currentTransactionId
     );
@@ -148,7 +148,7 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const addTransaction = async (txData: Omit<Transaction, 'id' | 'createdAt'>): Promise<Transaction | null> => {
     const slipValidation = isSlipNoUnique(txData.slipNo.trim());
     if (!slipValidation.unique) {
-      const desc = `Slip No. "${txData.slipNo}" already used. Original in A/C: ${slipValidation.conflictingAccountName || 'N/A'}, Date: ${slipValidation.conflictingTransactionDate ? new Date(slipValidation.conflictingTransactionDate).toLocaleDateString() : 'N/A'}, Desc: ${slipValidation.conflictingTransactionDescription || 'N/A'}.`;
+      const desc = `Slip No. "${txData.slipNo}" already used. Original in A/C: ${slipValidation.conflictingAccountName || 'N/A'}, Date: ${slipValidation.conflictingTransactionDate ? new Date(slipValidation.conflictingTransactionDate).toLocaleDateString() : 'N/A'}, Desc: "${slipValidation.conflictingTransactionDescription || 'N/A'}".`;
       toast({
         title: "Error: Duplicate Slip No.",
         description: desc,
@@ -170,7 +170,7 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const updateTransaction = async (updatedTx: Transaction): Promise<Transaction | null> => {
      const slipValidation = isSlipNoUnique(updatedTx.slipNo.trim(), updatedTx.id);
      if (!slipValidation.unique) {
-      const desc = `Slip No. "${updatedTx.slipNo}" already used. Original in A/C: ${slipValidation.conflictingAccountName || 'N/A'}, Date: ${slipValidation.conflictingTransactionDate ? new Date(slipValidation.conflictingTransactionDate).toLocaleDateString() : 'N/A'}, Desc: ${slipValidation.conflictingTransactionDescription || 'N/A'}.`;
+      const desc = `Slip No. "${updatedTx.slipNo}" already used. Original in A/C: ${slipValidation.conflictingAccountName || 'N/A'}, Date: ${slipValidation.conflictingTransactionDate ? new Date(slipValidation.conflictingTransactionDate).toLocaleDateString() : 'N/A'}, Desc: "${slipValidation.conflictingTransactionDescription || 'N/A'}".`;
       toast({
         title: "Error: Duplicate Slip No.",
         description: desc,
@@ -201,7 +201,6 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const calculateAccountBalance = useCallback((accountId: string): { balance: number; type: 'Dr' | 'Cr' | 'Zero' } => {
     let balance = 0;
-     // Sort transactions chronologically for accurate balance calculation
     const accountSpecificTransactions = transactions
       .filter(tx => tx.accountId === accountId || tx.codeAccountId === accountId)
       .sort((a, b) => {
@@ -212,12 +211,12 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       });
 
     accountSpecificTransactions.forEach(tx => {
-      if (tx.accountId === accountId) { // Direct transaction
+      if (tx.accountId === accountId) { 
         balance += tx.debit;
         balance -= tx.credit;
-      } else if (tx.codeAccountId === accountId) { // Mirrored transaction
-        balance += tx.credit; // Mirrored debit
-        balance -= tx.debit;  // Mirrored credit
+      } else if (tx.codeAccountId === accountId) { 
+        balance += tx.credit; 
+        balance -= tx.debit;  
       }
     });
 

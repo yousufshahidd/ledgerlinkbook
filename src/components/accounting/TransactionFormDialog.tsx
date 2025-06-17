@@ -24,7 +24,7 @@ import { useToast } from '@/hooks/use-toast';
 interface TransactionFormDialogProps {
   accountId: string;
   transactionToEdit?: Transaction;
-  onFormSubmit?: () => void; // Callback after successful submission
+  onFormSubmit?: () => void; 
 }
 
 const getDefaultDate = () => new Date().toISOString().split('T')[0];
@@ -79,7 +79,6 @@ export function TransactionFormDialog({ accountId, transactionToEdit, onFormSubm
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!validateSlipNo()) {
-      // Toast notification for duplicate slip is handled by addTransaction/updateTransaction now
       return;
     }
 
@@ -96,7 +95,7 @@ export function TransactionFormDialog({ accountId, transactionToEdit, onFormSubm
       slipNo: slipNo.trim(),
       debit: transactionType === 'debit' ? numericAmount : 0,
       credit: transactionType === 'credit' ? numericAmount : 0,
-      codeAccountId: codeAccountId || undefined, 
+      codeAccountId: codeAccountId === NONE_SELECT_VALUE_INTERNAL ? undefined : (codeAccountId || undefined),
     };
 
     let success = false;

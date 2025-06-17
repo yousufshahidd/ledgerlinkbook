@@ -36,12 +36,12 @@ const generatePdf = (accountName: string, ledgerData: (string|number|null|undefi
   const doc = new jsPDF();
 
   const reportTitle = `Transaction Report for ${accountName}`;
-  const generationDate = `Generated on: ${format(new Date(), 'dd/MM/yyyy')}`; // Format consistent with image
+  const generationDate = `Generated on: ${format(new Date(), 'dd/MM/yyyy')}`;
 
   doc.setFontSize(18);
-  doc.text(reportTitle, 14, 22); // Adjusted Y for spacing
+  doc.text(reportTitle, 14, 22);
   doc.setFontSize(11);
-  doc.setTextColor(100); // Gray color for subtitle
+  doc.setTextColor(100); 
   doc.text(generationDate, 14, 30);
 
   const tableColumn = ["#", "Date", "Description", "Slip No.", "Debit", "Credit", "Balance"];
@@ -50,15 +50,14 @@ const generatePdf = (accountName: string, ledgerData: (string|number|null|undefi
   const dataToExport = lineLimit && lineLimit > 0 ? ledgerData.slice(0, lineLimit) : ledgerData;
 
   dataToExport.forEach(row => {
-    // row structure is [index, date, desc, slip, debit, credit, balance]
     const formattedRow = [
-      row[0] ?? '', // #
-      row[1] ?? '', // Date
-      row[2] ?? '', // Description
-      row[3] ?? '', // Slip No.
-      row[4] === '-' || row[4] == null ? '-' : Number(row[4]).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }), // Debit
-      row[5] === '-' || row[5] == null ? '-' : Number(row[5]).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }), // Credit
-      row[6] == null ? '-' : Number(row[6]).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) // Balance
+      row[0] ?? '', 
+      row[1] ?? '', 
+      row[2] ?? '', 
+      row[3] ?? '', 
+      row[4] === '-' || row[4] == null ? '-' : Number(row[4]).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }), 
+      row[5] === '-' || row[5] == null ? '-' : Number(row[5]).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }), 
+      row[6] == null ? '-' : Number(row[6]).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     ];
     tableRows.push(formattedRow as (string | number)[]);
   });
@@ -66,30 +65,28 @@ const generatePdf = (accountName: string, ledgerData: (string|number|null|undefi
   autoTable(doc, {
     head: [tableColumn],
     body: tableRows,
-    startY: 38, // Start table below title and subtitle
+    startY: 38, 
     headStyles: {
-      fillColor: [34, 49, 63], // Dark blue/grayish header (like image)
-      textColor: [255, 255, 255], // White text
+      fillColor: [34, 49, 63], 
+      textColor: [255, 255, 255], 
       fontStyle: 'bold',
     },
-    theme: 'striped', // 'striped', 'grid', 'plain'
+    theme: 'striped', 
     styles: {
       font: 'helvetica',
       fontSize: 9,
       cellPadding: 2,
-      overflow: 'linebreak', // Handle long descriptions
+      overflow: 'linebreak', 
     },
     columnStyles: {
-      0: { halign: 'center', cellWidth: 10 }, // #
-      2: { cellWidth: 'auto' }, // Description - let it take space
-      4: { halign: 'right' }, // Debit
-      5: { halign: 'right' }, // Credit
-      6: { halign: 'right' }, // Balance
+      0: { halign: 'center', cellWidth: 10 }, 
+      2: { cellWidth: 'auto' }, 
+      4: { halign: 'right' }, 
+      5: { halign: 'right' }, 
+      6: { halign: 'right' }, 
     },
     didParseCell: function (data) {
-        // For Description column, prevent excessively long words from breaking layout
         if (data.column.dataKey === 2 && typeof data.cell.text === 'string') {
-            // This is a simple word wrap, more complex logic might be needed for specific cases
              data.cell.styles.cellWidth = 'wrap';
         }
     }
@@ -130,8 +127,8 @@ export function LedgerTable({ account }: LedgerTableProps) {
         ...tx,
         id: tx.id, 
         accountId: account.id,
-        debit: tx.credit,
-        credit: tx.debit,
+        debit: tx.credit, // Mirrored: original credit becomes debit for this account
+        credit: tx.debit, // Mirrored: original debit becomes credit for this account
         codeAccountId: tx.accountId,
         isMirror: true,
         originalAccountId: tx.accountId,
@@ -170,6 +167,7 @@ export function LedgerTable({ account }: LedgerTableProps) {
         if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
         if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
         
+        // Secondary sort by creation time for stability if primary sort values are equal
         const dateA = new Date(a.createdAt).getTime();
         const dateB = new Date(b.createdAt).getTime();
         return dateB - dateA; 
@@ -179,26 +177,25 @@ export function LedgerTable({ account }: LedgerTableProps) {
   }, [ledgerEntries, searchTerm, sortColumn, sortDirection]);
 
   const entriesWithRunningBalance = useMemo(() => {
-    let currentBalance = 0;
-    const entriesToProcess = [...filteredAndSortedEntries]; 
-    
-    // Create a temporary array sorted strictly by date for balance calculation
+    // For running balance, always use chronological order regardless of display sort
     const chronologicallySortedForBalance = [...ledgerEntries].sort((a, b) => {
       const dateA = new Date(a.date).getTime();
       const dateB = new Date(b.date).getTime();
       if (dateA !== dateB) return dateA - dateB;
-      // If dates are same, sort by creation time to maintain order of entry
+      // If dates are same, sort by creation time (proxy for transaction sequence)
       return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
     });
 
     const balanceMap = new Map<string, number>();
-    currentBalance = 0;
+    let currentBalance = 0; // Start with opening balance of 0
     chronologicallySortedForBalance.forEach(entry => {
-      currentBalance += entry.debit - entry.credit;
+      currentBalance += entry.debit - entry.credit; // prev_bal + debit - credit
+      // Use a unique key for each entry (direct or mirrored)
       balanceMap.set(entry.id + (entry.isMirror ? '-mirror' : ''), currentBalance);
     });
     
-    return entriesToProcess.map(entry => ({
+    // Map these calculated balances back to the (potentially differently sorted) filtered entries
+    return filteredAndSortedEntries.map(entry => ({
       ...entry,
       balance: balanceMap.get(entry.id + (entry.isMirror ? '-mirror' : '')) ?? 0,
     }));
@@ -207,12 +204,14 @@ export function LedgerTable({ account }: LedgerTableProps) {
   
   const finalDisplayedEntries = useMemo(() => {
     if (sortColumn === 'balance') {
+      // If sorting by balance, use the calculated running balances
       return [...entriesWithRunningBalance].sort((a, b) => {
         const balanceA = a.balance ?? 0;
         const balanceB = b.balance ?? 0;
         if (balanceA < balanceB) return sortDirection === 'asc' ? -1 : 1;
         if (balanceA > balanceB) return sortDirection === 'asc' ? 1 : -1;
         
+        // Secondary sort by date if balances are equal
         const dateA = new Date(a.date).getTime();
         const dateB = new Date(b.date).getTime();
         return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
@@ -227,7 +226,7 @@ export function LedgerTable({ account }: LedgerTableProps) {
       setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
     } else {
       setSortColumn(column);
-      setSortDirection('asc');
+      setSortDirection('asc'); // Default to ascending for new column sort
     }
   };
 
@@ -258,6 +257,7 @@ export function LedgerTable({ account }: LedgerTableProps) {
     
     const limit = pdfLineLimit ? parseInt(pdfLineLimit, 10) : undefined;
     if (pdfLineLimit && (isNaN(limit!) || limit! <= 0)) {
+        // This should ideally be handled with a toast or inline error
         alert("Please enter a valid positive line number for PDF export.");
         return;
     }
@@ -422,4 +422,3 @@ const InputWithIcon = React.forwardRef<HTMLInputElement, InputWithIconProps>(
   }
 );
 InputWithIcon.displayName = "InputWithIcon";
-
