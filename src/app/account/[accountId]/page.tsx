@@ -2,12 +2,11 @@
 // This file is now a Server Component
 import AccountDetailsClient from './AccountDetailsClient';
 
-export const dynamicParams = true; // Allow new params even if not in generateStaticParams
-
 export async function generateStaticParams() {
   // For an Electron app with dynamic, user-created data,
   // we don't pre-render specific account pages at build time.
-  // Return an empty array. Routes will be client-side rendered.
+  // Return an empty array. Routes will be client-side rendered
+  // after the initial app load, via client-side navigation.
   return [];
 }
 

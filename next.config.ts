@@ -2,7 +2,7 @@ import type {NextConfig} from 'next';
 
 const nextConfig: NextConfig = {
   output: 'export',
-  trailingSlash: true, // Ensures exported paths end with a slash (e.g., /page/ -> /page/index.html)
+  // trailingSlash: true, // Removed as it might conflict with dynamic route handling in export mode
   typescript: {
     ignoreBuildErrors: true,
   },
