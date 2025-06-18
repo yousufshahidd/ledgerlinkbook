@@ -3,10 +3,10 @@
 import AccountDetailsClient from './AccountDetailsClient';
 
 export async function generateStaticParams() {
-  // For an Electron app with dynamic, user-created data,
-  // we don't pre-render specific account pages at build time.
-  // Return an empty array. Routes will be client-side rendered
-  // after the initial app load, via client-side navigation.
+  // For an app with dynamic, user-created data, especially when using
+  // output: 'export', we don't pre-render specific account pages at build time.
+  // Return an empty array. Routes will be handled client-side
+  // or on-demand if the hosting platform supports it (for Vercel, client-side is key here).
   return [];
 }
 
