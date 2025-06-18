@@ -1,4 +1,3 @@
-
 // This file is now a Server Component
 import AccountDetailsClient from './AccountDetailsClient';
 
