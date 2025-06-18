@@ -25,8 +25,7 @@ function createWindow() {
         pathname: path.join(__dirname, 'out/index.html'),
         protocol: 'file:',
         slashes: true,
-      })
-    );
+      }));
   }
   
   // Optional: Remove default menu in production for a cleaner look
