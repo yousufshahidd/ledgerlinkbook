@@ -2,11 +2,10 @@
 // This file is now a Server Component
 import AccountDetailsClient from './AccountDetailsClient';
 
+// When using output: 'export', generateStaticParams is required for dynamic routes.
+// For a desktop app where account IDs are dynamic and user-generated,
+// we return an empty array, indicating these pages will be client-side rendered.
 export async function generateStaticParams() {
-  // For an app with dynamic, user-created data, especially when using
-  // output: 'export', we don't pre-render specific account pages at build time.
-  // Return an empty array. Routes will be handled client-side
-  // or on-demand if the hosting platform supports it (for Vercel, client-side is key here).
   return [];
 }
 

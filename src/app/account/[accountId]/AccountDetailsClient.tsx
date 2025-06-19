@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useRouter } from 'next/navigation'; // useParams is no longer needed if accountId is passed as prop
+import { useRouter } from 'next/navigation';
 import { useAccounting } from '@/context/AccountingContext';
 import { LedgerTable } from '@/components/accounting/LedgerTable';
 import { Button } from '@/components/ui/button';
@@ -14,7 +14,6 @@ interface AccountDetailsClientProps {
 }
 
 export default function AccountDetailsClient({ accountId }: AccountDetailsClientProps) {
-  // accountId is now received as a prop
   const { getAccountById, isLoading: isAccountingLoading } = useAccounting();
   const router = useRouter();
 
