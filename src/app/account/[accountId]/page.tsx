@@ -1,24 +1,26 @@
-// This file is a Server Component by default.
-// DO NOT ADD "use client" HERE.
+"use client"; // This page now directly uses client-side hooks/components
 
 import AccountDetailsClient from './AccountDetailsClient';
+import { useParams } from 'next/navigation'; // Use hook for client components
 
-// generateStaticParams is REQUIRED for dynamic routes when using "output: 'export'".
-// It tells Next.js which instances of this dynamic route to pre-render at build time.
-// For your application, where account IDs are dynamic and user-generated (stored in localStorage),
-// you don't want to pre-render any specific account pages.
-// Returning an empty array [] informs Next.js of this, satisfying the requirement
-// for the function to exist without pre-rendering specific pages.
-// Client-side navigation will then handle rendering these pages dynamically.
-export async function generateStaticParams() {
-  return [];
-}
+// generateStaticParams is NO LONGER NEEDED when not using output: 'export'
+// for standard Vercel deployments.
 
-// This is the Server Component for the /account/[accountId] route.
-// It receives route parameters (params) from Next.js.
-export default function AccountPage({ params }: { params: { accountId: string } }) {
-  // It then renders the AccountDetailsClient (a Client Component),
-  // passing the accountId to it. The client component handles the actual
-  // data fetching from localStorage and UI rendering.
-  return <AccountDetailsClient accountId={params.accountId} />;
+// This component will now effectively be the entry point for this route
+// and will handle client-side rendering of account details.
+export default function AccountPage() {
+  const params = useParams();
+  const accountId = params.accountId as string; // Access accountId from params
+
+  // If accountId is not available yet (e.g., router not ready),
+  // you might want to show a loader or return null.
+  // However, AccountDetailsClient already has its own loading state.
+  if (!accountId) {
+    // Optionally, handle the case where accountId might not be immediately available
+    // This is less common with useParams in App Router page components,
+    // but good to be aware of.
+    return null; // Or a loading spinner
+  }
+
+  return <AccountDetailsClient accountId={accountId} />;
 }
